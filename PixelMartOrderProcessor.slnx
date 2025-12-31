@@ -1,3 +1,7 @@
 <Solution>
+  <Project Path="EmailWorker/EmailWorker.csproj" Id="2124443c-581a-4e6e-9783-1a995271c615" />
+  <Project Path="InventoryWorker/InventoryWorker.csproj" Id="84af5b55-a90c-4c02-8566-585c076b2bfd" />
+  <Project Path="PaymentWorker/PaymentWorker.csproj" Id="a83daf7e-3db5-4e13-883c-8afea45efa65" />
   <Project Path="PixelMartOrderProcessor/PixelMartOrderProcessor.csproj" />
+  <Project Path="Shared/Shared.csproj" Id="0b9ad5c5-eb1e-4876-987f-9c016f2ec2f1" />
 </Solution>
