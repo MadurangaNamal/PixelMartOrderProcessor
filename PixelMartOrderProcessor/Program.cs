@@ -13,7 +13,10 @@ var dbPassword = builder.Configuration["DB_PASSWORD"]
 
 var connectionString = rawConnectionString.Replace("{DB_PASSWORD}", dbPassword);
 
-builder.Services.AddDbContext<PixelMartOrderProcessorDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddDbContext<PixelMartOrderProcessorDbContext>(options =>
+options.UseNpgsql(
+    connectionString,
+    b => b.MigrationsAssembly("PixelMartOrderProcessor")));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
