@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using RabbitMQ.Client;
+using Shared.Configuration;
 using Shared.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,6 +23,29 @@ options.UseNpgsql(
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSingleton<RabbitMqConnectionManager>();
+
+builder.Services.AddSingleton<IConnection>(sp =>
+{
+    var factory = new ConnectionFactory()
+    {
+        HostName = builder.Configuration["RabbitMq:Host"] ?? throw new InvalidOperationException("RabbitMq:Host is not configured"),
+        Port = int.Parse(builder.Configuration["RabbitMq:Port"] ?? throw new InvalidOperationException("RabbitMq:Port is not configured")),
+        UserName = builder.Configuration["RabbitMq:Username"] ?? throw new InvalidOperationException("RabbitMq:Username is not configured"),
+        Password = builder.Configuration["RabbitMq:Password"] ?? throw new InvalidOperationException("RabbitMq:Password is not configured")
+    };
+
+    return factory.CreateConnectionAsync().GetAwaiter().GetResult();
+});
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll",
+        policyBuilder => policyBuilder
+            .AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader());
+});
 
 var app = builder.Build();
 
@@ -35,6 +60,7 @@ else
     app.UseHsts();
 }
 
+app.UseCors("AllowAll");
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseAuthorization();
