@@ -47,6 +47,8 @@ builder.Services.AddCors(options =>
             .AllowAnyHeader());
 });
 
+builder.Services.AddHostedService<PaymentWorker.Worker>();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
