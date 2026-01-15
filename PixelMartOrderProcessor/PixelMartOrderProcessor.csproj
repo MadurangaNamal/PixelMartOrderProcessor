@@ -23,6 +23,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\EmailWorker\EmailWorker.csproj" />
+    <ProjectReference Include="..\InventoryWorker\InventoryWorker.csproj" />
     <ProjectReference Include="..\PaymentWorker\PaymentWorker.csproj" />
     <ProjectReference Include="..\Shared\Shared.csproj" />
   </ItemGroup>

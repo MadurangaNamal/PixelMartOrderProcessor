@@ -2,18 +2,15 @@ using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
 using Shared.Configuration;
 using Shared.Data;
+using Shared.Helpers;
+using Shared.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Configuration.AddUserSecrets<Program>();
+if (builder.Environment.IsDevelopment())
+    builder.Configuration.AddUserSecrets<Program>();
 
-var rawConnectionString = builder.Configuration.GetConnectionString("DefaultConnection") ??
-    throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-
-var dbPassword = builder.Configuration["DB_PASSWORD"]
-    ?? throw new InvalidOperationException("Database password 'DB_PASSWORD' not found in configuration.");
-
-var connectionString = rawConnectionString.Replace("{DB_PASSWORD}", dbPassword);
+var connectionString = DatabaseConfiguration.GetConnectionString(builder.Configuration);
 
 builder.Services.AddDbContext<PixelMartOrderProcessorDbContext>(options =>
 options.UseNpgsql(
@@ -23,7 +20,9 @@ options.UseNpgsql(
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddScoped<IPixelMartOrderProcessorRepository, PixelMartOrderProcessorRepository>();
 builder.Services.AddSingleton<RabbitMqConnectionManager>();
+builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
 
 builder.Services.AddSingleton<IConnection>(sp =>
 {
@@ -48,6 +47,8 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddHostedService<PaymentWorker.Worker>();
+builder.Services.AddHostedService<InventoryWorker.Worker>();
+builder.Services.AddHostedService<EmailWorker.Worker>();
 
 var app = builder.Build();
 

@@ -1,6 +1,7 @@
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.Configuration;
+using Shared.Helpers;
 using Shared.Messages;
 using Shared.Models;
 using Shared.Repositories;
@@ -9,20 +10,25 @@ using System.Text.Json;
 
 namespace PaymentWorker;
 
-public class Worker(ILogger<Worker> logger) : BackgroundService
+public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly RabbitMqConnectionManager _rabbitMq;
     private readonly IConfiguration _configuration;
+    private readonly IMessagePublisher _messagePublisher;
 
-    public Worker(ILogger<Worker> logger, IServiceProvider serviceProvider, RabbitMqConnectionManager rabbitMq, IConfiguration configuration)
-        : this(logger)
+    public Worker(ILogger<Worker> logger,
+        IServiceProvider serviceProvider,
+        RabbitMqConnectionManager rabbitMq,
+        IConfiguration configuration,
+        IMessagePublisher messagePublisher)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _rabbitMq = rabbitMq ?? throw new ArgumentNullException(nameof(rabbitMq));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _messagePublisher = messagePublisher ?? throw new ArgumentNullException(nameof(messagePublisher));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -69,7 +75,7 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
 
                     // Publish to inventory queue
                     var inventoryQueue = _configuration["RabbitMq:InventoryQueue"] ?? "inventory-queue";
-                    await PublishToQueueAsync(inventoryQueue, orderMessage);
+                    await _messagePublisher.PublishAsync(inventoryQueue, orderMessage);
                 }
                 else
                 {
@@ -92,23 +98,6 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
 
         _logger.LogInformation("PaymentWorker started consuming from queue: {QueueName}", queueName);
 
-        await Task.Delay(Timeout.Infinite, stoppingToken);  // Keep the worker running
-    }
-
-    private async Task PublishToQueueAsync(string queueName, OrderPlacedMessage message)
-    {
-        await _rabbitMq.DeclareQueueAsync(queueName);
-
-        var json = JsonSerializer.Serialize(message);
-        var body = Encoding.UTF8.GetBytes(json);
-
-        var properties = new BasicProperties
-        {
-            Persistent = true
-        };
-
-        await _rabbitMq.Channel!.BasicPublishAsync(exchange: "", routingKey: queueName, mandatory: false, basicProperties: properties, body: body);
-
-        _logger.LogInformation("Published message to queue {QueueName} for Order {OrderId}", queueName, message.OrderId);
+        await Task.Delay(Timeout.Infinite, stoppingToken);
     }
 }
