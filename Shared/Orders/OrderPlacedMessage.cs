@@ -1,4 +1,4 @@
-﻿namespace Shared.Messages;
+﻿namespace Shared.Orders;
 
 public class OrderPlacedMessage
 {

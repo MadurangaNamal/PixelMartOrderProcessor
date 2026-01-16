@@ -1,6 +1,6 @@
-﻿namespace Shared.Messages;
+﻿namespace Shared.Orders;
 
-public class OrderItemDto
+public class CreateOrderItemRequest
 {
     public string ProductId { get; set; } = string.Empty;
     public string ProductName { get; set; } = string.Empty;
