@@ -1,0 +1,145 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pixelmart-postgres
+    environment:
+      POSTGRES_DB: PixelMartOrderProcessorDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-MySecurePassword123!}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - pixelmart-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: pixelmart-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - pixelmart-network
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  orderapi:
+    build:
+      context: .
+      dockerfile: PixelMartOrderProcessor/Dockerfile
+    container_name: pixelmart-orderProcessor-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - DB_PASSWORD=${DB_PASSWORD:-MySecurePassword123!}
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password={DB_PASSWORD}
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__OrderPlacedQueue=order-placed-queue
+      - RabbitMq__InventoryQueue=inventory-queue
+      - RabbitMq__EmailQueue=email-queue
+    ports:
+      - "5000:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - pixelmart-network
+    restart: unless-stopped
+
+  paymentworker:
+    build:
+      context: .
+      dockerfile: PaymentWorker/Dockerfile
+    container_name: pixelmart-paymentworker
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - DB_PASSWORD=${DB_PASSWORD:-MySecurePassword123!}
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password={DB_PASSWORD}
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__OrderPlacedQueue=order-placed-queue
+      - RabbitMq__InventoryQueue=inventory-queue
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - pixelmart-network
+    restart: unless-stopped
+
+  inventoryworker:
+    build:
+      context: .
+      dockerfile: InventoryWorker/Dockerfile
+    container_name: pixelmart-inventoryworker
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - DB_PASSWORD=${DB_PASSWORD:-MySecurePassword123!}
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password={DB_PASSWORD}
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__InventoryQueue=inventory-queue
+      - RabbitMq__EmailQueue=email-queue
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - pixelmart-network
+    restart: unless-stopped
+
+  emailworker:
+    build:
+      context: .
+      dockerfile: EmailWorker/Dockerfile
+    container_name: pixelmart-emailworker
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - DB_PASSWORD=${DB_PASSWORD:-MySecurePassword123!}
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password={DB_PASSWORD}
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__EmailQueue=email-queue
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - pixelmart-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  pixelmart-network:
+    driver: bridge

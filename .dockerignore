@@ -1,0 +1,54 @@
+# Build results
+**/bin/
+**/obj/
+**/out/
+
+# User-specific files
+**/*.user
+**/*.suo
+**/.vs/
+
+# NuGet
+**/packages/
+**/*.nupkg
+
+# Test results
+**/TestResults/
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Visual Studio cache/options
+.vs/
+.vscode/
+
+# Rider
+.idea/
+
+# User secrets
+**/secrets.json
+**/*.Development.json
+
+# Docker
+**/.dockerignore
+**/docker-compose*
+**/Dockerfile*
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+**/*.md
+LICENSE
+
+# Logs
+**/logs/
+**/*.log
+
+# OS files
+.DS_Store
+Thumbs.db
