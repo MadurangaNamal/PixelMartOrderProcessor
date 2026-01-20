@@ -1,0 +1,51 @@
+name: Build Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+env:
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  build:
+    name: Build and Package
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build solution
+      run: dotnet build --no-restore --configuration Release
+    
+    - name: Publish
+      run: |
+        dotnet publish PixelMartOrderProcessor/PixelMartOrderProcessor.csproj -c Release -o ./publish/PixelMartOrderProcessor
+        dotnet publish PaymentWorker/PaymentWorker.csproj -c Release -o ./publish/paymentworker
+        dotnet publish InventoryWorker/InventoryWorker.csproj -c Release -o ./publish/inventoryworker
+        dotnet publish EmailWorker/EmailWorker.csproj -c Release -o ./publish/emailworker
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: published-apps
+        path: ./publish
