@@ -19,6 +19,11 @@ public class PixelMartOrderProcessorDbContext : DbContext
         modelBuilder.Entity<Order>(entity =>
         {
             entity.HasKey(e => e.OrderId);
+
+            entity.HasIndex(e => e.IdempotencyKey)
+            .IsUnique()
+            .HasFilter("idempotency_key IS NOT NULL");
+
             entity.HasIndex(e => e.CustomerEmail);
             entity.HasIndex(e => e.OrderDate);
             entity.HasIndex(e => e.Status);

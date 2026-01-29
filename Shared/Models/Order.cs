@@ -11,6 +11,10 @@ public class Order
     [Column("order_id")]
     public Guid OrderId { get; set; }
 
+    [Column("idempotency_key")]
+    [MaxLength(100)]
+    public string? IdempotencyKey { get; set; }
+
     [Required]
     [Column("customer_email")]
     [MaxLength(255)]

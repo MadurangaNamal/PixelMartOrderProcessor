@@ -33,8 +33,8 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Consume order placed queue
         var queueName = _configuration["RabbitMq:OrderPlacedQueue"] ?? "order-placed-queue";
-
         await _rabbitMq.DeclareQueueAsync(queueName);
         var consumer = new AsyncEventingBasicConsumer(_rabbitMq.Channel!);
 

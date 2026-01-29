@@ -38,6 +38,14 @@ public class PixelMartOrderProcessorRepository : IPixelMartOrderProcessorReposit
             .FirstOrDefaultAsync(o => o.OrderId == orderId);
     }
 
+    public async Task<Order?> GetOrderByIdempotencyKeyAsync(string idempotencyKey)
+    {
+        return await _dbContext.Orders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey);
+    }
+
     public async Task<List<OrderStatusHistory>> GetOrderHistoryAsync(Guid orderId)
     {
         return await _dbContext.OrderStatusHistories

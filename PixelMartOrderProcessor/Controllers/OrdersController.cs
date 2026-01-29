@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Shared.Helpers;
 using Shared.Models;
 using Shared.Orders;
@@ -89,13 +90,37 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> PlaceOrder([FromBody] CreateOrderRequest orderRequest)
+    public async Task<IActionResult> PlaceOrder(
+        [FromBody] CreateOrderRequest orderRequest,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
     {
+
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            return BadRequest(new { message = "Idempotency-Key header is required" });
+
+        var existingOrder = await _repository.GetOrderByIdempotencyKeyAsync(idempotencyKey);
+
+        if (existingOrder != null)
+        {
+            _logger.LogInformation(
+                "Duplicate order request detected with idempotency key: {IdempotencyKey}. Returning existing order: {OrderId}",
+                idempotencyKey, existingOrder.OrderId);
+
+            return Ok(new
+            {
+                orderId = existingOrder.OrderId,
+                status = existingOrder.Status.ToString(),
+                message = "Order already exists (idempotent response)",
+                duplicate = true
+            });
+        }
+
         try
         {
             var order = new Order
             {
                 OrderId = Guid.NewGuid(),
+                IdempotencyKey = idempotencyKey,
                 CustomerEmail = orderRequest.CustomerEmail,
                 TotalAmount = orderRequest.TotalAmount,
                 OrderDate = DateTime.UtcNow,
@@ -132,21 +157,40 @@ public class OrdersController : ControllerBase
             var queueName = _configuration["RabbitMq:OrderPlacedQueue"] ?? "order-placed-queue";
             await _messagePublisher.PublishAsync(queueName, message);
 
-            _logger.LogInformation("Order {OrderId} placed successfully", newOrder.OrderId);
+            _logger.LogInformation("Order {OrderId} placed successfully with idempotency key {IdempotencyKey}", newOrder.OrderId, idempotencyKey);
 
             return Ok(new
             {
                 orderId = newOrder.OrderId,
                 status = newOrder.Status.ToString(),
-                message = "Order placed successfully. Processing..."
+                message = "Order placed successfully. Processing...",
+                duplicate = false
             });
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("idempotency_key") == true)
+        {
+            _logger.LogWarning(ex, "Concurrent duplicate order request detected for idempotency key: {IdempotencyKey}", idempotencyKey);
+
+            var previousOrder = await _repository.GetOrderByIdempotencyKeyAsync(idempotencyKey!);
+
+            if (previousOrder != null)
+            {
+                return Ok(new
+                {
+                    orderId = previousOrder.OrderId,
+                    status = previousOrder.Status.ToString(),
+                    message = "Order already exists (idempotent response)",
+                    duplicate = true
+                });
+            }
+
+            return StatusCode(500, new { message = "Error processing order" });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error placing order");
 
-            return StatusCode(StatusCodes.Status500InternalServerError,
-                new { message = "An error occurred while placing the order" });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "An error occurred while placing the order" });
         }
     }
 }

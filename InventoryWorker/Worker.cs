@@ -33,8 +33,8 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Consume inventory queue
         var queueName = _configuration["RabbitMq:InventoryQueue"] ?? "inventory-queue";
-
         await _rabbitMq.DeclareQueueAsync(queueName);
         var consumer = new AsyncEventingBasicConsumer(_rabbitMq.Channel!);
 

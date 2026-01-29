@@ -29,8 +29,8 @@ namespace EmailWorker
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            // Consume email queue
             var queueName = _configuration["RabbitMq:EmailQueue"] ?? "email-queue";
-
             await _rabbitMq.DeclareQueueAsync(queueName);
             var consumer = new AsyncEventingBasicConsumer(_rabbitMq.Channel!);
 

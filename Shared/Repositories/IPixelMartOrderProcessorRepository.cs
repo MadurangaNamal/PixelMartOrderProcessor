@@ -6,6 +6,7 @@ public interface IPixelMartOrderProcessorRepository
 {
     Task<Order> CreateOrderAsync(Order order);
     Task<Order?> GetOrderByIdAsync(Guid orderId);
+    Task<Order?> GetOrderByIdempotencyKeyAsync(string idempotencyKey);
     Task<List<Order>> GetOrdersByCustomerEmailAsync(string email);
     Task<bool> UpdateOrderStatusAsync(Guid orderId, OrderStatus status, string message);
     Task<bool> UpdatePaymentStatusAsync(Guid orderId, ProcessingStatus status);
