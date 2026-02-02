@@ -80,7 +80,8 @@ public class Worker : BackgroundService
                 await Task.Delay(3000, stoppingToken); // Simulate payment processing
 
                 // Simulate payment logic (90% success rate)
-                var paymentSuccess = Random.Shared.Next(100) < 90;
+                var random = new Random();
+                var paymentSuccess = random.Next(100) < 90;
 
                 if (paymentSuccess)
                 {
