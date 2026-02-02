@@ -141,6 +141,7 @@ public class OrdersController : ControllerBase
 
             var message = new OrderPlacedMessage
             {
+                MessageId = Guid.NewGuid(),
                 OrderId = newOrder.OrderId,
                 CustomerEmail = newOrder.CustomerEmail,
                 TotalAmount = newOrder.TotalAmount,

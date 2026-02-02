@@ -12,8 +12,8 @@ using Shared.Data;
 namespace PixelMartOrderProcessor.Migrations
 {
     [DbContext(typeof(PixelMartOrderProcessorDbContext))]
-    [Migration("20260130115110_add_message_idempotency")]
-    partial class add_message_idempotency
+    [Migration("20260202101231_add_processed_messages")]
+    partial class add_processed_messages
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -170,10 +170,8 @@ namespace PixelMartOrderProcessor.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<string>("MessageId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
                         .HasColumnName("message_id");
 
                     b.Property<Guid>("OrderId")

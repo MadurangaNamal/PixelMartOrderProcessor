@@ -12,8 +12,7 @@ public class ProcessedMessage
 
     [Required]
     [Column("message_id")]
-    [MaxLength(100)]
-    public string MessageId { get; set; } = string.Empty;
+    public Guid MessageId { get; set; }
 
     [Required]
     [Column("order_id")]

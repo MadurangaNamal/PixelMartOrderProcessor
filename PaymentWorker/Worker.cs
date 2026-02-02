@@ -1,6 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.Configuration;
+using Shared.Data;
 using Shared.Helpers;
 using Shared.Models;
 using Shared.Orders;
@@ -43,35 +45,60 @@ public class Worker : BackgroundService
             var body = ea.Body.ToArray();
             var message = Encoding.UTF8.GetString(body);
             var orderMessage = JsonSerializer.Deserialize<OrderPlacedMessage>(message);
+            var messageId = orderMessage!.MessageId;
 
             if (orderMessage == null)
             {
                 _logger.LogWarning("Received null order message");
 
-                await _rabbitMq.Channel!.BasicNackAsync(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
+                await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, false);
                 return;
             }
 
-            _logger.LogInformation("Processing payment for Order {OrderId}", orderMessage.OrderId);
+            _logger.LogInformation("Processing payment for Order {OrderId}, MessageId: {MessageId}", orderMessage.OrderId, messageId);
 
             try
             {
                 using var scope = _serviceProvider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
                 var orderRepository = scope.ServiceProvider.GetRequiredService<IPixelMartOrderProcessorRepository>();
+
+                var orderAlreadyProcessed = await dbContext.ProcessedMessages
+                .AnyAsync(pm => pm.MessageId == messageId && pm.WorkerType == WorkerType.PaymentWorker.ToString());
+
+                if (orderAlreadyProcessed)
+                {
+                    _logger.LogInformation(
+                        "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.", messageId, orderMessage.OrderId);
+
+                    await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+                    return;
+                }
 
                 await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.InProgress);
 
                 await Task.Delay(3000, stoppingToken); // Simulate payment processing
 
                 // Simulate payment logic (90% success rate)
-                var random = new Random();
-                var paymentSuccess = random.Next(100) < 90;
+                var paymentSuccess = Random.Shared.Next(100) < 90;
 
                 if (paymentSuccess)
                 {
                     _logger.LogInformation("Payment successful for Order {OrderId}", orderMessage.OrderId);
 
                     await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.Completed);
+
+                    // Keep a record about processed message
+                    dbContext.ProcessedMessages.Add(new ProcessedMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        MessageId = messageId,
+                        OrderId = orderMessage.OrderId,
+                        WorkerType = WorkerType.PaymentWorker.ToString(),
+                        ProcessedAt = DateTime.UtcNow
+                    });
+
+                    await dbContext.SaveChangesAsync();
 
                     // Publish to inventory queue
                     var inventoryQueue = _configuration["RabbitMq:InventoryQueue"] ?? "inventory-queue";
@@ -84,17 +111,24 @@ public class Worker : BackgroundService
                     await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.Failed);
                 }
 
-                await _rabbitMq.Channel!.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
+                await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+            }
+            catch (DbUpdateException ex)
+            {
+                // Duplicate processing detected (race condition)
+                _logger.LogWarning(ex, "Concurrent duplicate processing detected for MessageId: {MessageId}", messageId);
+
+                await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing payment for Order {OrderId}", orderMessage.OrderId);
 
-                await _rabbitMq.Channel!.BasicNackAsync(deliveryTag: ea.DeliveryTag, multiple: false, requeue: true);
+                await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, true);
             }
         };
 
-        await _rabbitMq.Channel!.BasicConsumeAsync(queue: queueName, autoAck: false, consumer: consumer, cancellationToken: stoppingToken);
+        await _rabbitMq.Channel!.BasicConsumeAsync(queueName, false, consumer, stoppingToken);
 
         _logger.LogInformation("PaymentWorker started consuming from queue: {QueueName}", queueName);
 

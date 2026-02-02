@@ -167,10 +167,8 @@ namespace PixelMartOrderProcessor.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<string>("MessageId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
                         .HasColumnName("message_id");
 
                     b.Property<Guid>("OrderId")

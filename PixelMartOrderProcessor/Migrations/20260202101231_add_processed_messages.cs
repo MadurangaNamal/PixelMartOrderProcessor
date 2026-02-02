@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace PixelMartOrderProcessor.Migrations
 {
     /// <inheritdoc />
-    public partial class add_message_idempotency : Migration
+    public partial class add_processed_messages : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -16,7 +16,7 @@ namespace PixelMartOrderProcessor.Migrations
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    message_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    message_id = table.Column<Guid>(type: "uuid", nullable: false),
                     order_id = table.Column<Guid>(type: "uuid", nullable: false),
                     worker_type = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
                     processed_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)

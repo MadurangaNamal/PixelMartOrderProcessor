@@ -1,6 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.Configuration;
+using Shared.Data;
 using Shared.Models;
 using Shared.Orders;
 using Shared.Repositories;
@@ -39,6 +41,7 @@ namespace EmailWorker
                 var body = ea.Body.ToArray();
                 var message = Encoding.UTF8.GetString(body);
                 var orderMessage = JsonSerializer.Deserialize<OrderPlacedMessage>(message);
+                var messageId = orderMessage!.MessageId;
 
                 if (orderMessage == null)
                 {
@@ -47,12 +50,25 @@ namespace EmailWorker
                     return;
                 }
 
-                _logger.LogInformation("Sending confirmation email for Order {OrderId}", orderMessage.OrderId);
+                _logger.LogInformation("Sending confirmation email for Order {OrderId}, MessageId: {MessageId}", orderMessage.OrderId, messageId);
 
                 try
                 {
                     using var scope = _serviceProvider.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
                     var orderRepository = scope.ServiceProvider.GetRequiredService<IPixelMartOrderProcessorRepository>();
+
+                    var orderAlreadyProcessed = await dbContext.ProcessedMessages
+                    .AnyAsync(pm => pm.MessageId == messageId && pm.WorkerType == WorkerType.EmailWorker.ToString());
+
+                    if (orderAlreadyProcessed)
+                    {
+                        _logger.LogInformation(
+                            "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.", messageId, orderMessage.OrderId);
+
+                        await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+                        return;
+                    }
 
                     await orderRepository.UpdateEmailStatusAsync(orderMessage.OrderId, ProcessingStatus.InProgress);
 
@@ -61,6 +77,22 @@ namespace EmailWorker
                     _logger.LogInformation("Email sent to {Email} for Order {OrderId}", orderMessage.CustomerEmail, orderMessage.OrderId);
 
                     await orderRepository.UpdateEmailStatusAsync(orderMessage.OrderId, ProcessingStatus.Completed);
+
+                    dbContext.ProcessedMessages.Add(new ProcessedMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        MessageId = messageId,
+                        OrderId = orderMessage.OrderId,
+                        WorkerType = WorkerType.EmailWorker.ToString(),
+                        ProcessedAt = DateTime.UtcNow
+                    });
+
+                    await dbContext.SaveChangesAsync();
+                    await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+                }
+                catch (DbUpdateException ex)
+                {
+                    _logger.LogWarning(ex, "Concurrent duplicate processing detected for MessageId: {MessageId}", messageId);
 
                     await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
                 }

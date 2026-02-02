@@ -2,6 +2,7 @@
 
 public class OrderPlacedMessage
 {
+    public Guid MessageId { get; set; }
     public Guid OrderId { get; set; }
     public string CustomerEmail { get; set; } = string.Empty;
     public decimal TotalAmount { get; set; }
