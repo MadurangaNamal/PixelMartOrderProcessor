@@ -1,5 +1,5 @@
 # PixelMart-Order Processor
-![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square&logo=dotnet)
+![.NET](https://img.shields.io/badge/.NET-9.0-512BD4?style=flat-square&logo=dotnet)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791?style=flat-square&logo=postgresql)
 ![RabbitMQ](https://img.shields.io/badge/RabbitMQ-7.x-FF6600?style=flat-square&logo=rabbitmq)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker)

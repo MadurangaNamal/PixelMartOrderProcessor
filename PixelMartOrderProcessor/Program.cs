@@ -1,7 +1,11 @@
+using HealthChecks.UI.Client;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using RabbitMQ.Client;
 using Shared.Configuration;
 using Shared.Data;
+using Shared.HealthChecks;
 using Shared.Helpers;
 using Shared.Repositories;
 
@@ -24,18 +28,38 @@ builder.Services.AddScoped<IPixelMartOrderProcessorRepository, PixelMartOrderPro
 builder.Services.AddSingleton<RabbitMqConnectionManager>();
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
 
-builder.Services.AddSingleton<IConnection>(sp =>
+builder.Services.AddSingleton<IConnectionFactory>(sp =>
 {
-    var factory = new ConnectionFactory()
+    return new ConnectionFactory
     {
-        HostName = builder.Configuration["RabbitMq:Host"] ?? throw new InvalidOperationException("RabbitMq:Host is not configured"),
-        Port = int.Parse(builder.Configuration["RabbitMq:Port"] ?? throw new InvalidOperationException("RabbitMq:Port is not configured")),
-        UserName = builder.Configuration["RabbitMq:Username"] ?? throw new InvalidOperationException("RabbitMq:Username is not configured"),
-        Password = builder.Configuration["RabbitMq:Password"] ?? throw new InvalidOperationException("RabbitMq:Password is not configured")
+        HostName = builder.Configuration["RabbitMq:Host"]!,
+        Port = int.Parse(builder.Configuration["RabbitMq:Port"]!),
+        UserName = builder.Configuration["RabbitMq:Username"]!,
+        Password = builder.Configuration["RabbitMq:Password"]!
     };
-
-    return factory.CreateConnectionAsync().GetAwaiter().GetResult();
 });
+
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>(
+        "database",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["db", "sql", "postgres"])
+    .AddCheck<RabbitMqHealthCheck>(
+        "rabbitmq-custom",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["messaging", "rabbitmq"])
+    .AddNpgSql(
+        connectionString,
+        name: "postgres-connection",
+        tags: ["db", "postgres"]);
+
+builder.Services.AddHealthChecksUI(setup =>
+{
+    setup.SetEvaluationTimeInSeconds(30);
+    setup.MaximumHistoryEntriesPerEndpoint(50);
+    setup.AddHealthCheckEndpoint("PixelMartOrderProcessor", "/health");
+})
+.AddInMemoryStorage();
 
 builder.Services.AddCors(options =>
 {
@@ -69,6 +93,30 @@ app.UseCors("AllowAll");
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseAuthorization();
+
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = _ => true,
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+});
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+});
+
+app.MapHealthChecksUI(options =>
+{
+    options.UIPath = "/health-ui";
+    options.ApiPath = "/health-ui-api";
+});
+
 app.MapControllers();
 
 await app.RunAsync();
