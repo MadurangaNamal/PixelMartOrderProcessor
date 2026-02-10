@@ -14,6 +14,7 @@ public class PixelMartOrderProcessorDbContext : DbContext
     public DbSet<OrderItem> OrderItems { get; set; }
     public DbSet<OrderStatusHistory> OrderStatusHistories { get; set; }
     public DbSet<ProcessedMessage> ProcessedMessages { get; set; }
+    public DbSet<WorkerHealthStatus> WorkerHealthStatuses { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -79,6 +80,13 @@ public class PixelMartOrderProcessorDbContext : DbContext
 
             entity.HasIndex(e => new { e.MessageId, e.WorkerType })
             .IsUnique();
+        });
+
+        modelBuilder.Entity<WorkerHealthStatus>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.WorkerName).IsUnique();
+            entity.HasIndex(e => e.LastCheckTime);
         });
 
         base.OnModelCreating(modelBuilder);

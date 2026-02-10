@@ -3,6 +3,7 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.Configuration;
 using Shared.Data;
+using Shared.HealthChecks;
 using Shared.Models;
 using Shared.Orders;
 using Shared.Repositories;
@@ -17,16 +18,19 @@ namespace EmailWorker
         private readonly IServiceProvider _serviceProvider;
         private readonly RabbitMqConnectionManager _rabbitMq;
         private readonly IConfiguration _configuration;
+        private readonly WorkerHealthCheck _healthCheck;
 
         public Worker(ILogger<Worker> logger,
             IServiceProvider serviceProvider,
             RabbitMqConnectionManager rabbitMq,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            WorkerHealthCheck healthCheck)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _rabbitMq = rabbitMq ?? throw new ArgumentNullException(nameof(rabbitMq));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _healthCheck = healthCheck ?? throw new ArgumentNullException(nameof(healthCheck));
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -46,7 +50,10 @@ namespace EmailWorker
                 if (orderMessage == null)
                 {
                     _logger.LogWarning("Received null order message");
+
                     await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, false);
+                    _healthCheck.RecordError();
+
                     return;
                 }
 
@@ -67,6 +74,8 @@ namespace EmailWorker
                             "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.", messageId, orderMessage.OrderId);
 
                         await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+                        _healthCheck.RecordProcessing();
+
                         return;
                     }
 
@@ -89,17 +98,20 @@ namespace EmailWorker
 
                     await dbContext.SaveChangesAsync();
                     await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+                    _healthCheck.RecordProcessing();
                 }
                 catch (DbUpdateException ex)
                 {
                     _logger.LogWarning(ex, "Concurrent duplicate processing detected for MessageId: {MessageId}", messageId);
 
                     await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+                    _healthCheck.RecordProcessing();
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error sending email for Order {OrderId}", orderMessage.OrderId);
                     await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, true);
+                    _healthCheck.RecordError();
                 }
             };
 

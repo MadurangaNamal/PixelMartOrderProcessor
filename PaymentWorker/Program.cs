@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PaymentWorker;
 using Shared.Configuration;
 using Shared.Data;
+using Shared.HealthChecks;
 using Shared.Helpers;
 using Shared.Repositories;
 
@@ -20,6 +21,13 @@ options.UseNpgsql(
 builder.Services.AddScoped<IPixelMartOrderProcessorRepository, PixelMartOrderProcessorRepository>();
 builder.Services.AddSingleton<RabbitMqConnectionManager>();
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
+builder.Services.AddSingleton<WorkerHealthCheck>();
+
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database")
+    .AddCheck<RabbitMqHealthCheck>("rabbitmq")
+    .AddCheck<WorkerHealthCheck>("worker");
+
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();

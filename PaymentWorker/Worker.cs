@@ -3,6 +3,7 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.Configuration;
 using Shared.Data;
+using Shared.HealthChecks;
 using Shared.Helpers;
 using Shared.Models;
 using Shared.Orders;
@@ -19,18 +20,22 @@ public class Worker : BackgroundService
     private readonly RabbitMqConnectionManager _rabbitMq;
     private readonly IConfiguration _configuration;
     private readonly IMessagePublisher _messagePublisher;
+    private readonly WorkerHealthCheck _healthCheck;
 
     public Worker(ILogger<Worker> logger,
         IServiceProvider serviceProvider,
         RabbitMqConnectionManager rabbitMq,
         IConfiguration configuration,
-        IMessagePublisher messagePublisher)
+        IMessagePublisher messagePublisher,
+        WorkerHealthCheck healthCheck)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _rabbitMq = rabbitMq ?? throw new ArgumentNullException(nameof(rabbitMq));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _messagePublisher = messagePublisher ?? throw new ArgumentNullException(nameof(messagePublisher));
+        _healthCheck = healthCheck ?? throw new ArgumentNullException(nameof(healthCheck));
+
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -52,6 +57,8 @@ public class Worker : BackgroundService
                 _logger.LogWarning("Received null order message");
 
                 await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, false);
+                _healthCheck.RecordError();
+
                 return;
             }
 
@@ -72,6 +79,8 @@ public class Worker : BackgroundService
                         "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.", messageId, orderMessage.OrderId);
 
                     await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+                    _healthCheck.RecordProcessing();
+
                     return;
                 }
 
@@ -113,6 +122,8 @@ public class Worker : BackgroundService
                 }
 
                 await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+                _healthCheck.RecordProcessing();
+
             }
             catch (DbUpdateException ex)
             {
@@ -120,12 +131,14 @@ public class Worker : BackgroundService
                 _logger.LogWarning(ex, "Concurrent duplicate processing detected for MessageId: {MessageId}", messageId);
 
                 await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
+                _healthCheck.RecordProcessing();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing payment for Order {OrderId}", orderMessage.OrderId);
 
                 await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, true);
+                _healthCheck.RecordError();
             }
         };
 
