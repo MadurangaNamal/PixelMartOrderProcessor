@@ -1,5 +1,6 @@
 using EmailWorker;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Shared.Configuration;
 using Shared.Data;
 using Shared.HealthChecks;
@@ -26,6 +27,13 @@ builder.Services.AddHealthChecks()
     .AddCheck<RabbitMqHealthCheck>("rabbitmq")
     .AddCheck<WorkerHealthCheck>("worker");
 
+builder.Services.Configure<HealthCheckPublisherOptions>(options =>
+{
+    options.Delay = TimeSpan.FromSeconds(5);
+    options.Period = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddSingleton<IHealthCheckPublisher, DatabaseHealthCheckPublisher>();
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();
