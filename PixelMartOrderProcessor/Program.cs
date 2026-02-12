@@ -51,11 +51,28 @@ builder.Services.AddHealthChecks()
     .AddNpgSql(
         connectionString,
         name: "postgres-connection",
-        tags: ["db", "postgres"]);
+        tags: ["db", "postgres"])
+     .AddTypeActivatedCheck<RemoteWorkerHealthCheck>(
+        "payment-worker",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["worker", "remote"],
+        args: ["PaymentWorker", TimeSpan.FromSeconds(30)])
+
+    .AddTypeActivatedCheck<RemoteWorkerHealthCheck>(
+        "inventory-worker",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["worker", "remote"],
+        args: ["InventoryWorker", TimeSpan.FromSeconds(30)])
+
+    .AddTypeActivatedCheck<RemoteWorkerHealthCheck>(
+        "email-worker",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["worker", "remote"],
+        args: ["EmailWorker", TimeSpan.FromSeconds(30)]);
 
 builder.Services.AddHealthChecksUI(setup =>
 {
-    setup.SetEvaluationTimeInSeconds(30);
+    setup.SetEvaluationTimeInSeconds(15);
     setup.MaximumHistoryEntriesPerEndpoint(50);
     setup.AddHealthCheckEndpoint("PixelMartOrderProcessor", "/health");
 })
