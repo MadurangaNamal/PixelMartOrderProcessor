@@ -49,7 +49,7 @@ public class DatabaseHealthCheckPublisher : IHealthCheckPublisher
                 dbContext.WorkerHealthStatuses.Add(healthStatus);
             }
 
-            healthStatus.Status = report.Status.ToString();
+            healthStatus.Status = workerCheck.Value.Status.ToString();
             healthStatus.LastCheckTime = DateTime.UtcNow;
             healthStatus.UpdatedAt = DateTime.UtcNow;
 
