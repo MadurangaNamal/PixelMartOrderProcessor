@@ -31,7 +31,7 @@ public class WorkerHealthCheck : IHealthCheck
                 { "time_since_last_processing", timeSinceLastProcessing }
             };
 
-            if (timeSinceLastProcessing.TotalMinutes > 10 && _totalProcessed > 0)
+            if (timeSinceLastProcessing.TotalMinutes > 60 && _totalProcessed > 0)
                 return Task.FromResult(HealthCheckResult.Degraded("No messages processed recently", data: data));
 
             if (errorRate > 0.5 && _totalProcessed > 10)

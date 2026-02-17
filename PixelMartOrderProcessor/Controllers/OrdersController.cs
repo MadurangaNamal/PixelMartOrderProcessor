@@ -94,7 +94,6 @@ public class OrdersController : ControllerBase
         [FromBody] CreateOrderRequest orderRequest,
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
     {
-
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             return BadRequest(new { message = "Idempotency-Key header is required" });
 

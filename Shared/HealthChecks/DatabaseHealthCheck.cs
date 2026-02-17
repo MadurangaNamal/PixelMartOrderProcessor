@@ -43,9 +43,9 @@ public class DatabaseHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "RabbitMQ health check failed");
+            _logger.LogError(ex, "Database health check failed");
 
-            return HealthCheckResult.Unhealthy("RabbitMQ health check failed", ex);
+            return HealthCheckResult.Unhealthy("Database health check failed", ex);
         }
     }
 }
