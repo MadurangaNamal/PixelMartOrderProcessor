@@ -111,11 +111,20 @@ This ASP.NET Core system delivers a scalable, event-driven e-commerce order proc
    cd EmailWorker
    dotnet run
 ```
-
 6. **Access the application**
    - API: `https://localhost:5001`
    - Swagger UI: `https://localhost:5001/swagger`
    - RabbitMQ Management: `http://localhost:15672` (guest/guest)
+
+## 🩺 Health Checks
+
+The API provides built-in health monitoring for reliable observability.
+All critical components (PostgreSQL DB, RabbitMQ, and the three background workers) are actively monitored.
+
+- `GET /health` — Overall system health (API + DB + RabbitMQ + Workers)
+- `GET /health/ready` — Readiness probe
+- `GET /health/live` — Liveness probe
+- `GET /health-ui` — Interactive health dashboard
 
 ## 🤝 Contributing
 

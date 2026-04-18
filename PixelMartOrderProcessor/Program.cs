@@ -72,7 +72,7 @@ builder.Services.AddHealthChecks()
 
 builder.Services.AddHealthChecksUI(setup =>
 {
-    setup.SetEvaluationTimeInSeconds(15);
+    setup.SetEvaluationTimeInSeconds(10);
     setup.MaximumHistoryEntriesPerEndpoint(50);
     setup.AddHealthCheckEndpoint("PixelMartOrderProcessor", "/health");
 })
@@ -116,18 +116,15 @@ app.MapHealthChecks("/health", new HealthCheckOptions
     Predicate = _ => true,
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
-
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
-
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = _ => false,
 });
-
 app.MapHealthChecksUI(options =>
 {
     options.UIPath = "/health-ui";
