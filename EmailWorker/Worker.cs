@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.Configuration;
+using Shared.Constants;
 using Shared.Data;
 using Shared.HealthChecks;
 using Shared.Models;
@@ -36,7 +37,7 @@ namespace EmailWorker
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             // Consume email queue
-            var queueName = _configuration["RabbitMq:EmailQueue"] ?? "email-queue";
+            var queueName = _configuration[AppConstants.RabbitMq.EmailQueue] ?? AppConstants.RabbitMq.DefaultEmailQueue;
             await _rabbitMq.DeclareQueueAsync(queueName);
             var consumer = new AsyncEventingBasicConsumer(_rabbitMq.Channel!);
 

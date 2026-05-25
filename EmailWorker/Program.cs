@@ -2,6 +2,7 @@ using EmailWorker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Shared.Configuration;
+using Shared.Constants;
 using Shared.Data;
 using Shared.HealthChecks;
 using Shared.Repositories;
@@ -16,16 +17,16 @@ var connectionString = DatabaseConfiguration.GetConnectionString(builder.Configu
 builder.Services.AddDbContext<PixelMartOrderProcessorDbContext>(options =>
 options.UseNpgsql(
     connectionString,
-    b => b.MigrationsAssembly("PixelMartOrderProcessor")));
+    b => b.MigrationsAssembly(AppConstants.MigrationsAssembly)));
 
 builder.Services.AddScoped<IPixelMartOrderProcessorRepository, PixelMartOrderProcessorRepository>();
 builder.Services.AddSingleton<RabbitMqConnectionManager>();
 builder.Services.AddSingleton<WorkerHealthCheck>();
 
 builder.Services.AddHealthChecks()
-    .AddCheck<DatabaseHealthCheck>("database")
-    .AddCheck<RabbitMqHealthCheck>("rabbitmq")
-    .AddCheck<WorkerHealthCheck>("worker");
+    .AddCheck<DatabaseHealthCheck>(AppConstants.HealthChecks.Database)
+    .AddCheck<RabbitMqHealthCheck>(AppConstants.HealthChecks.RabbitMq)
+    .AddCheck<WorkerHealthCheck>(AppConstants.HealthChecks.Worker);
 
 builder.Services.Configure<HealthCheckPublisherOptions>(options =>
 {

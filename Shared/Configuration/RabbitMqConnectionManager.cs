@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Exceptions;
+using Shared.Constants;
 
 namespace Shared.Configuration;
 
@@ -21,10 +22,10 @@ public class RabbitMqConnectionManager : IAsyncDisposable
     {
         var factory = new ConnectionFactory
         {
-            HostName = configuration["RabbitMq:Host"] ?? "localhost",
-            Port = int.Parse(configuration["RabbitMq:Port"] ?? "5672"),
-            UserName = configuration["RabbitMq:Username"] ?? "guest",
-            Password = configuration["RabbitMq:Password"] ?? "guest",
+            HostName = configuration[AppConstants.RabbitMq.Host] ?? AppConstants.RabbitMq.DefaultHost,
+            Port = int.Parse(configuration[AppConstants.RabbitMq.Port] ?? AppConstants.RabbitMq.DefaultPort),
+            UserName = configuration[AppConstants.RabbitMq.Username] ?? AppConstants.RabbitMq.DefaultUsername,
+            Password = configuration[AppConstants.RabbitMq.Password] ?? AppConstants.RabbitMq.DefaultPassword,
         };
 
         try

@@ -116,6 +116,36 @@ This ASP.NET Core system delivers a scalable, event-driven e-commerce order proc
    - Swagger UI: `https://localhost:5001/swagger`
    - RabbitMQ Management: `http://localhost:15672` (guest/guest)
 
+7. **Place a new order**
+
+   Send a `POST` request to create an order. The `Idempotency-Key` header is required (use a unique value per order; repeat the same key to safely retry without creating duplicates).
+
+```bash
+curl -X POST https://localhost:7197/api/orders \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "customerEmail": "customer@example.com",
+    "totalAmount": 149.97,
+    "items": [
+      {
+        "productId": "SKU-001",
+        "productName": "Wireless Mouse",
+        "quantity": 1,
+        "price": 29.99
+      },
+      {
+        "productId": "SKU-002",
+        "productName": "Mechanical Keyboard",
+        "quantity": 2,
+        "price": 59.99
+      }
+    ]
+  }'
+```
+
+   On Windows PowerShell, generate a unique idempotency key with `[guid]::NewGuid().ToString()` instead of `uuidgen`.
+
 ## 🩺 Health Checks
 
 The API provides built-in health monitoring for reliable observability.

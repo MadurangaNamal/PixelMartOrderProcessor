@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.Configuration;
+using Shared.Constants;
 using Shared.Data;
 using Shared.HealthChecks;
 using Shared.Helpers;
@@ -41,7 +42,7 @@ public class Worker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Consume order placed queue
-        var queueName = _configuration["RabbitMq:OrderPlacedQueue"] ?? "order-placed-queue";
+        var queueName = _configuration[AppConstants.RabbitMq.OrderPlacedQueue] ?? AppConstants.RabbitMq.DefaultOrderPlacedQueue;
         await _rabbitMq.DeclareQueueAsync(queueName);
         var consumer = new AsyncEventingBasicConsumer(_rabbitMq.Channel!);
 
@@ -111,7 +112,7 @@ public class Worker : BackgroundService
                     await dbContext.SaveChangesAsync();
 
                     // Publish to inventory queue
-                    var inventoryQueue = _configuration["RabbitMq:InventoryQueue"] ?? "inventory-queue";
+                    var inventoryQueue = _configuration[AppConstants.RabbitMq.InventoryQueue] ?? AppConstants.RabbitMq.DefaultInventoryQueue;
                     await _messagePublisher.PublishAsync(inventoryQueue, orderMessage);
                 }
                 else

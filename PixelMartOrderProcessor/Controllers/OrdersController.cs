@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Shared.Constants;
 using Shared.Helpers;
 using Shared.Models;
 using Shared.Orders;
@@ -95,7 +96,7 @@ public class OrdersController : ControllerBase
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
-            return BadRequest(new { message = "Idempotency-Key header is required" });
+            return BadRequest(new { message = AppConstants.Api.Messages.IdempotencyKeyRequired });
 
         var existingOrder = await _repository.GetOrderByIdempotencyKeyAsync(idempotencyKey);
 
@@ -109,7 +110,7 @@ public class OrdersController : ControllerBase
             {
                 orderId = existingOrder.OrderId,
                 status = existingOrder.Status.ToString(),
-                message = "Order already exists (idempotent response)",
+                message = AppConstants.Api.Messages.OrderAlreadyExists,
                 duplicate = true
             });
         }
@@ -154,7 +155,7 @@ public class OrdersController : ControllerBase
                 }).ToList(),
             };
 
-            var queueName = _configuration["RabbitMq:OrderPlacedQueue"] ?? "order-placed-queue";
+            var queueName = _configuration[AppConstants.RabbitMq.OrderPlacedQueue] ?? AppConstants.RabbitMq.DefaultOrderPlacedQueue;
             await _messagePublisher.PublishAsync(queueName, message);
 
             _logger.LogInformation("Order {OrderId} placed successfully with idempotency key {IdempotencyKey}", newOrder.OrderId, idempotencyKey);
@@ -163,11 +164,11 @@ public class OrdersController : ControllerBase
             {
                 orderId = newOrder.OrderId,
                 status = newOrder.Status.ToString(),
-                message = "Order placed successfully. Processing...",
+                message = AppConstants.Api.Messages.OrderPlacedSuccessfully,
                 duplicate = false
             });
         }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("idempotency_key") == true)
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains(AppConstants.Api.IdempotencyKeyColumn) == true)
         {
             _logger.LogWarning(ex, "Concurrent duplicate order request detected for idempotency key: {IdempotencyKey}", idempotencyKey);
 
@@ -179,18 +180,18 @@ public class OrdersController : ControllerBase
                 {
                     orderId = previousOrder.OrderId,
                     status = previousOrder.Status.ToString(),
-                    message = "Order already exists (idempotent response)",
+                    message = AppConstants.Api.Messages.OrderAlreadyExists,
                     duplicate = true
                 });
             }
 
-            return StatusCode(500, new { message = "Error processing order" });
+            return StatusCode(500, new { message = AppConstants.Api.Messages.ErrorProcessingOrder });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error placing order");
 
-            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "An error occurred while placing the order" });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = AppConstants.Api.Messages.ErrorPlacingOrder });
         }
     }
 }

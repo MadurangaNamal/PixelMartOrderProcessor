@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using RabbitMQ.Client;
 using Shared.Configuration;
+using Shared.Constants;
 using Shared.Data;
 using Shared.HealthChecks;
 using Shared.Helpers;
@@ -14,12 +15,13 @@ var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsDevelopment())
     builder.Configuration.AddUserSecrets<Program>();
 
+// Retrieve the connection string from DatabaseConfiguration
 var connectionString = DatabaseConfiguration.GetConnectionString(builder.Configuration);
 
 builder.Services.AddDbContext<PixelMartOrderProcessorDbContext>(options =>
 options.UseNpgsql(
     connectionString,
-    b => b.MigrationsAssembly("PixelMartOrderProcessor")));
+    b => b.MigrationsAssembly(AppConstants.MigrationsAssembly)));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -32,55 +34,55 @@ builder.Services.AddSingleton<IConnectionFactory>(sp =>
 {
     return new ConnectionFactory
     {
-        HostName = builder.Configuration["RabbitMq:Host"]!,
-        Port = int.Parse(builder.Configuration["RabbitMq:Port"]!),
-        UserName = builder.Configuration["RabbitMq:Username"]!,
-        Password = builder.Configuration["RabbitMq:Password"]!
+        HostName = builder.Configuration[AppConstants.RabbitMq.Host]!,
+        Port = int.Parse(builder.Configuration[AppConstants.RabbitMq.Port]!),
+        UserName = builder.Configuration[AppConstants.RabbitMq.Username]!,
+        Password = builder.Configuration[AppConstants.RabbitMq.Password]!
     };
 });
 
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>(
-        "database",
+        AppConstants.HealthChecks.Database,
         failureStatus: HealthStatus.Unhealthy,
-        tags: ["db", "sql", "postgres"])
+        tags: [AppConstants.HealthChecks.Tags.Db, AppConstants.HealthChecks.Tags.Sql, AppConstants.HealthChecks.Tags.Postgres])
     .AddCheck<RabbitMqHealthCheck>(
-        "rabbitmq-custom",
+        AppConstants.HealthChecks.RabbitMqCustom,
         failureStatus: HealthStatus.Unhealthy,
-        tags: ["messaging", "rabbitmq"])
+        tags: [AppConstants.HealthChecks.Tags.Messaging, AppConstants.HealthChecks.Tags.RabbitMq])
     .AddNpgSql(
         connectionString,
-        name: "postgres-connection",
-        tags: ["db", "postgres"])
+        name: AppConstants.HealthChecks.PostgresConnection,
+        tags: [AppConstants.HealthChecks.Tags.Db, AppConstants.HealthChecks.Tags.Postgres])
      .AddTypeActivatedCheck<RemoteWorkerHealthCheck>(
-        "payment-worker",
+        AppConstants.HealthChecks.PaymentWorker,
         failureStatus: HealthStatus.Unhealthy,
-        tags: ["worker", "remote"],
-        args: ["PaymentWorker", TimeSpan.FromSeconds(30)])
+        tags: [AppConstants.HealthChecks.Tags.Worker, AppConstants.HealthChecks.Tags.Remote],
+        args: [AppConstants.Workers.Payment, TimeSpan.FromSeconds(30)])
 
     .AddTypeActivatedCheck<RemoteWorkerHealthCheck>(
-        "inventory-worker",
+        AppConstants.HealthChecks.InventoryWorker,
         failureStatus: HealthStatus.Unhealthy,
-        tags: ["worker", "remote"],
-        args: ["InventoryWorker", TimeSpan.FromSeconds(30)])
+        tags: [AppConstants.HealthChecks.Tags.Worker, AppConstants.HealthChecks.Tags.Remote],
+        args: [AppConstants.Workers.Inventory, TimeSpan.FromSeconds(30)])
 
     .AddTypeActivatedCheck<RemoteWorkerHealthCheck>(
-        "email-worker",
+        AppConstants.HealthChecks.EmailWorker,
         failureStatus: HealthStatus.Unhealthy,
-        tags: ["worker", "remote"],
-        args: ["EmailWorker", TimeSpan.FromSeconds(30)]);
+        tags: [AppConstants.HealthChecks.Tags.Worker, AppConstants.HealthChecks.Tags.Remote],
+        args: [AppConstants.Workers.Email, TimeSpan.FromSeconds(30)]);
 
 builder.Services.AddHealthChecksUI(setup =>
 {
     setup.SetEvaluationTimeInSeconds(10);
     setup.MaximumHistoryEntriesPerEndpoint(50);
-    setup.AddHealthCheckEndpoint("PixelMartOrderProcessor", "/health");
+    setup.AddHealthCheckEndpoint(AppConstants.ApplicationName, AppConstants.HealthChecks.Paths.Health);
 })
 .AddInMemoryStorage();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll",
+    options.AddPolicy(AppConstants.Cors.AllowAll,
         policyBuilder => policyBuilder
             .AllowAnyOrigin()
             .AllowAnyMethod()
@@ -106,29 +108,29 @@ else
     app.UseHsts();
 }
 
-app.UseCors("AllowAll");
+app.UseCors(AppConstants.Cors.AllowAll);
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseAuthorization();
 
-app.MapHealthChecks("/health", new HealthCheckOptions
+app.MapHealthChecks(AppConstants.HealthChecks.Paths.Health, new HealthCheckOptions
 {
     Predicate = _ => true,
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
-app.MapHealthChecks("/health/ready", new HealthCheckOptions
+app.MapHealthChecks(AppConstants.HealthChecks.Paths.Ready, new HealthCheckOptions
 {
-    Predicate = check => check.Tags.Contains("ready"),
+    Predicate = check => check.Tags.Contains(AppConstants.HealthChecks.Tags.Ready),
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
-app.MapHealthChecks("/health/live", new HealthCheckOptions
+app.MapHealthChecks(AppConstants.HealthChecks.Paths.Live, new HealthCheckOptions
 {
     Predicate = _ => false,
 });
 app.MapHealthChecksUI(options =>
 {
-    options.UIPath = "/health-ui";
-    options.ApiPath = "/health-ui-api";
+    options.UIPath = AppConstants.HealthChecks.Paths.Ui;
+    options.ApiPath = AppConstants.HealthChecks.Paths.UiApi;
 });
 
 app.MapControllers();

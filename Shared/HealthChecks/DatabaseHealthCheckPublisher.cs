@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+using Shared.Constants;
 using Shared.Data;
 using Shared.Models;
 using System.Text.Json;
@@ -21,7 +22,7 @@ public class DatabaseHealthCheckPublisher : IHealthCheckPublisher
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
-        _workerName = configuration["WorkerName"] ?? "Unknown";
+        _workerName = configuration[AppConstants.Configuration.WorkerName] ?? "Unknown";
     }
 
     public async Task PublishAsync(HealthReport report, CancellationToken cancellationToken)
@@ -31,7 +32,7 @@ public class DatabaseHealthCheckPublisher : IHealthCheckPublisher
             using var scope = _serviceProvider.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
 
-            var workerCheck = report.Entries.FirstOrDefault(e => e.Key == "worker");
+            var workerCheck = report.Entries.FirstOrDefault(e => e.Key == AppConstants.HealthChecks.Worker);
             var workerData = workerCheck.Value.Data;
 
             var healthStatus = await dbContext.WorkerHealthStatuses
