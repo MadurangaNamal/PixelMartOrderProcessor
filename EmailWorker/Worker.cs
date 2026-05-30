@@ -43,7 +43,7 @@ namespace EmailWorker
 
             consumer.ReceivedAsync += async (model, ea) =>
             {
-                var body = ea.Body.ToArray();
+                var body = ea.Body.ToArray(); // Get the message body as a byte array
                 var message = Encoding.UTF8.GetString(body);
                 var orderMessage = JsonSerializer.Deserialize<OrderPlacedMessage>(message);
                 var messageId = orderMessage!.MessageId;
@@ -66,6 +66,7 @@ namespace EmailWorker
                     var dbContext = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
                     var orderRepository = scope.ServiceProvider.GetRequiredService<IPixelMartOrderProcessorRepository>();
 
+                    // Check if the message has already been processed to ensure idempotency
                     var orderAlreadyProcessed = await dbContext.ProcessedMessages
                     .AnyAsync(pm => pm.MessageId == messageId && pm.WorkerType == WorkerType.EmailWorker.ToString());
 
@@ -81,7 +82,6 @@ namespace EmailWorker
                     }
 
                     await orderRepository.UpdateEmailStatusAsync(orderMessage.OrderId, ProcessingStatus.InProgress);
-
                     await Task.Delay(2000, stoppingToken); // Simulate email sending
 
                     _logger.LogInformation("Email sent to {Email} for Order {OrderId}", orderMessage.CustomerEmail, orderMessage.OrderId);

@@ -128,6 +128,7 @@ public class OrdersController : ControllerBase
                 PaymentStatus = ProcessingStatus.Pending,
                 InventoryStatus = ProcessingStatus.Pending,
                 EmailStatus = ProcessingStatus.Pending,
+
                 Items = orderRequest.Items.Select(i => new OrderItem
                 {
                     ProductId = i.ProductId,
@@ -155,10 +156,13 @@ public class OrdersController : ControllerBase
                 }).ToList(),
             };
 
-            var queueName = _configuration[AppConstants.RabbitMq.OrderPlacedQueue] ?? AppConstants.RabbitMq.DefaultOrderPlacedQueue;
+            var queueName = _configuration[AppConstants.RabbitMq.OrderPlacedQueue]
+                ?? AppConstants.RabbitMq.DefaultOrderPlacedQueue;
+
             await _messagePublisher.PublishAsync(queueName, message);
 
-            _logger.LogInformation("Order {OrderId} placed successfully with idempotency key {IdempotencyKey}", newOrder.OrderId, idempotencyKey);
+            _logger.LogInformation("Order {OrderId} placed successfully with idempotency key {IdempotencyKey}"
+                , newOrder.OrderId, idempotencyKey);
 
             return Ok(new
             {

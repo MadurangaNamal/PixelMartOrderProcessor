@@ -36,7 +36,6 @@ public class Worker : BackgroundService
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _messagePublisher = messagePublisher ?? throw new ArgumentNullException(nameof(messagePublisher));
         _healthCheck = healthCheck ?? throw new ArgumentNullException(nameof(healthCheck));
-
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -71,6 +70,7 @@ public class Worker : BackgroundService
                 var dbContext = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
                 var orderRepository = scope.ServiceProvider.GetRequiredService<IPixelMartOrderProcessorRepository>();
 
+                // Check if the message has already been processed to ensure idempotency
                 var orderAlreadyProcessed = await dbContext.ProcessedMessages
                 .AnyAsync(pm => pm.MessageId == messageId && pm.WorkerType == WorkerType.PaymentWorker.ToString());
 
@@ -86,7 +86,6 @@ public class Worker : BackgroundService
                 }
 
                 await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.InProgress);
-
                 await Task.Delay(3000, stoppingToken); // Simulate payment processing
 
                 // Simulate payment logic (90% success rate)
