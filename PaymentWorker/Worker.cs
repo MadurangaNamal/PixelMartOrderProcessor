@@ -9,6 +9,7 @@ using Shared.Helpers;
 using Shared.Models;
 using Shared.Orders;
 using Shared.Repositories;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -22,6 +23,7 @@ public class Worker : BackgroundService
     private readonly IConfiguration _configuration;
     private readonly IMessagePublisher _messagePublisher;
     private readonly WorkerHealthCheck _healthCheck;
+    private static readonly ActivitySource ActivitySource = OpenTelemetryConfiguration.ActivitySource;
 
     public Worker(ILogger<Worker> logger,
         IServiceProvider serviceProvider,
@@ -41,12 +43,16 @@ public class Worker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Consume order placed queue
-        var queueName = _configuration[AppConstants.RabbitMq.OrderPlacedQueue] ?? AppConstants.RabbitMq.DefaultOrderPlacedQueue;
+        var queueName = _configuration[AppConstants.RabbitMq.OrderPlacedQueue]
+            ?? AppConstants.RabbitMq.DefaultOrderPlacedQueue;
+
         await _rabbitMq.DeclareQueueAsync(queueName);
         var consumer = new AsyncEventingBasicConsumer(_rabbitMq.Channel!);
 
         consumer.ReceivedAsync += async (model, ea) =>
         {
+            using var activity = RabbitMqInstrumentation.StartConsumeActivity(queueName, ea.BasicProperties?.Headers);
+
             var body = ea.Body.ToArray();
             var message = Encoding.UTF8.GetString(body);
             var orderMessage = JsonSerializer.Deserialize<OrderPlacedMessage>(message);
@@ -55,6 +61,7 @@ public class Worker : BackgroundService
             if (orderMessage == null)
             {
                 _logger.LogWarning("Received null order message");
+                activity?.SetStatus(ActivityStatusCode.Error, "Received null order message");
 
                 await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, false);
                 _healthCheck.RecordError();
@@ -62,22 +69,35 @@ public class Worker : BackgroundService
                 return;
             }
 
-            _logger.LogInformation("Processing payment for Order {OrderId}, MessageId: {MessageId}", orderMessage.OrderId, messageId);
+            activity?.SetTag("order.id", orderMessage.OrderId);
+            activity?.SetTag("message.id", messageId);
+
+            _logger.LogInformation("Processing payment for Order {OrderId}, MessageId: {MessageId}, TraceId: {TraceId}",
+                orderMessage.OrderId, messageId, activity?.TraceId);
 
             try
             {
                 using var scope = _serviceProvider.CreateScope();
+                bool orderAlreadyProcessed;
                 var dbContext = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
                 var orderRepository = scope.ServiceProvider.GetRequiredService<IPixelMartOrderProcessorRepository>();
 
-                // Check if the message has already been processed to ensure idempotency
-                var orderAlreadyProcessed = await dbContext.ProcessedMessages
-                .AnyAsync(pm => pm.MessageId == messageId && pm.WorkerType == WorkerType.PaymentWorker.ToString());
+                using (var dedupeActivity = ActivitySource.StartActivity("payment.deduplication_check", ActivityKind.Internal))
+                {
+                    dedupeActivity?.SetTag("message.id", messageId);
+
+                    orderAlreadyProcessed = await dbContext.ProcessedMessages
+                        .AnyAsync(pm => pm.MessageId == messageId && pm.WorkerType == WorkerType.PaymentWorker.ToString());
+
+                    dedupeActivity?.SetTag("message.is_duplicate", orderAlreadyProcessed);
+                }
 
                 if (orderAlreadyProcessed)
                 {
-                    _logger.LogInformation(
-                        "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.", messageId, orderMessage.OrderId);
+                    _logger.LogInformation("Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.",
+                        messageId, orderMessage.OrderId);
+
+                    activity?.SetTag("message.skipped_as_duplicate", true);
 
                     await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
                     _healthCheck.RecordProcessing();
@@ -85,50 +105,84 @@ public class Worker : BackgroundService
                     return;
                 }
 
-                await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.InProgress);
+                using (var statusActivity = ActivitySource.StartActivity("payment.update_status_in_progress", ActivityKind.Internal))
+                {
+                    statusActivity?.SetTag("order.id", orderMessage.OrderId);
+                    statusActivity?.SetTag("payment.status", ProcessingStatus.InProgress.ToString());
+
+                    await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.InProgress);
+                }
+
                 await Task.Delay(3000, stoppingToken); // Simulate payment processing
 
                 // Simulate payment logic (90% success rate)
                 var random = new Random();
                 var paymentSuccess = random.Next(100) < 90;
+                activity?.SetTag("payment.success", paymentSuccess);
 
                 if (paymentSuccess)
                 {
                     _logger.LogInformation("Payment successful for Order {OrderId}", orderMessage.OrderId);
 
-                    await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.Completed);
-
-                    // Keep a record about processed message
-                    dbContext.ProcessedMessages.Add(new ProcessedMessage
+                    using (var dbWriteActivity = ActivitySource.StartActivity("payment.record_completion", ActivityKind.Internal))
                     {
-                        Id = Guid.NewGuid(),
-                        MessageId = messageId,
-                        OrderId = orderMessage.OrderId,
-                        WorkerType = WorkerType.PaymentWorker.ToString(),
-                        ProcessedAt = DateTime.UtcNow
-                    });
+                        dbWriteActivity?.SetTag("order.id", orderMessage.OrderId);
+                        dbWriteActivity?.SetTag("payment.status", ProcessingStatus.Completed.ToString());
 
-                    await dbContext.SaveChangesAsync();
+                        await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.Completed);
 
-                    // Publish to inventory queue
-                    var inventoryQueue = _configuration[AppConstants.RabbitMq.InventoryQueue] ?? AppConstants.RabbitMq.DefaultInventoryQueue;
-                    await _messagePublisher.PublishAsync(inventoryQueue, orderMessage);
+                        dbContext.ProcessedMessages.Add(new ProcessedMessage
+                        {
+                            Id = Guid.NewGuid(),
+                            MessageId = messageId,
+                            OrderId = orderMessage.OrderId,
+                            WorkerType = WorkerType.PaymentWorker.ToString(),
+                            ProcessedAt = DateTime.UtcNow
+                        });
+
+                        await dbContext.SaveChangesAsync();
+                    }
+
+
+                    // Span: Publish to inventory queue
+                    using (var publishActivity = ActivitySource.StartActivity("payment.publish_to_inventory", ActivityKind.Producer))
+                    {
+                        var inventoryQueue = _configuration[AppConstants.RabbitMq.InventoryQueue] ?? AppConstants.RabbitMq.DefaultInventoryQueue;
+
+                        publishActivity?.SetTag("messaging.destination", inventoryQueue);
+                        publishActivity?.SetTag("order.id", orderMessage.OrderId);
+
+                        await _messagePublisher.PublishAsync(inventoryQueue, orderMessage);
+                    }
                 }
                 else
                 {
                     _logger.LogError("Payment failed for Order {OrderId}", orderMessage.OrderId);
 
-                    await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.Failed);
+                    using (var failActivity = ActivitySource.StartActivity("payment.record_failure", ActivityKind.Internal))
+                    {
+                        failActivity?.SetTag("order.id", orderMessage.OrderId);
+                        failActivity?.SetTag("payment.status", ProcessingStatus.Failed.ToString());
+
+                        await orderRepository.UpdatePaymentStatusAsync(orderMessage.OrderId, ProcessingStatus.Failed);
+                    }
+
+                    activity?.SetStatus(ActivityStatusCode.Error, "Payment processing failed");
                 }
 
                 await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
-                _healthCheck.RecordProcessing();
 
+                _healthCheck.RecordProcessing();
+                activity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (DbUpdateException ex)
             {
                 // Duplicate processing detected (race condition)
                 _logger.LogWarning(ex, "Concurrent duplicate processing detected for MessageId: {MessageId}", messageId);
+
+                activity?.SetTag("exception.type", "DbUpdateException");
+                activity?.SetTag("message.concurrent_duplicate", true);
+                activity?.AddException(ex);
 
                 await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
                 _healthCheck.RecordProcessing();
@@ -136,6 +190,9 @@ public class Worker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing payment for Order {OrderId}", orderMessage.OrderId);
+
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                activity?.AddException(ex);
 
                 await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, true);
                 _healthCheck.RecordError();

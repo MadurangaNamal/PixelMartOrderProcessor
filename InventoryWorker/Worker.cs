@@ -62,7 +62,8 @@ public class Worker : BackgroundService
                 return;
             }
 
-            _logger.LogInformation("Updating inventory for Order {OrderId}, MessageId: {MessageId}", orderMessage.OrderId, messageId);
+            _logger.LogInformation("Updating inventory for Order {OrderId}, MessageId: {MessageId}",
+                orderMessage.OrderId, messageId);
 
             try
             {
@@ -76,7 +77,8 @@ public class Worker : BackgroundService
                 if (orderAlreadyProcessed)
                 {
                     _logger.LogInformation(
-                        "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.", messageId, orderMessage.OrderId);
+                        "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.",
+                        messageId, orderMessage.OrderId);
 
                     await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
                     _healthCheck.RecordProcessing();

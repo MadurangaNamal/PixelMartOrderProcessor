@@ -4,7 +4,7 @@ using System.Diagnostics;
 
 namespace Shared.Configuration;
 
-public class RabbitMqInstrumentation
+public static class RabbitMqInstrumentation
 {
     private static readonly ActivitySource ActivitySource = OpenTelemetryConfiguration.ActivitySource;
     private static readonly TextMapPropagator Propagator = Propagators.DefaultTextMapPropagator;

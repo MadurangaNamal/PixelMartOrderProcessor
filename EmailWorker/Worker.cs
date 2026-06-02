@@ -58,7 +58,8 @@ namespace EmailWorker
                     return;
                 }
 
-                _logger.LogInformation("Sending confirmation email for Order {OrderId}, MessageId: {MessageId}", orderMessage.OrderId, messageId);
+                _logger.LogInformation("Sending confirmation email for Order {OrderId}, MessageId: {MessageId}",
+                    orderMessage.OrderId, messageId);
 
                 try
                 {
@@ -73,7 +74,8 @@ namespace EmailWorker
                     if (orderAlreadyProcessed)
                     {
                         _logger.LogInformation(
-                            "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.", messageId, orderMessage.OrderId);
+                            "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.",
+                            messageId, orderMessage.OrderId);
 
                         await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
                         _healthCheck.RecordProcessing();
@@ -84,7 +86,8 @@ namespace EmailWorker
                     await orderRepository.UpdateEmailStatusAsync(orderMessage.OrderId, ProcessingStatus.InProgress);
                     await Task.Delay(2000, stoppingToken); // Simulate email sending
 
-                    _logger.LogInformation("Email sent to {Email} for Order {OrderId}", orderMessage.CustomerEmail, orderMessage.OrderId);
+                    _logger.LogInformation("Email sent to {Email} for Order {OrderId}", orderMessage.CustomerEmail,
+                        orderMessage.OrderId);
 
                     await orderRepository.UpdateEmailStatusAsync(orderMessage.OrderId, ProcessingStatus.Completed);
 
