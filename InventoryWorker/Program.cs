@@ -37,6 +37,7 @@ builder.Services.Configure<HealthCheckPublisherOptions>(options =>
 });
 
 builder.Services.AddSingleton<IHealthCheckPublisher, DatabaseHealthCheckPublisher>();
+builder.Services.AddPixelMartTelemetry("InventoryWorker", builder.Configuration);
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();

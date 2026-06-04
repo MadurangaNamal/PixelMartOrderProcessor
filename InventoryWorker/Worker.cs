@@ -9,6 +9,7 @@ using Shared.Helpers;
 using Shared.Models;
 using Shared.Orders;
 using Shared.Repositories;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -22,6 +23,7 @@ public class Worker : BackgroundService
     private readonly IConfiguration _configuration;
     private readonly IMessagePublisher _messagePublisher;
     private readonly WorkerHealthCheck _healthCheck;
+    private static readonly ActivitySource ActivitySource = OpenTelemetryConfiguration.ActivitySource;
 
     public Worker(ILogger<Worker> logger,
         IServiceProvider serviceProvider,
@@ -47,6 +49,9 @@ public class Worker : BackgroundService
 
         consumer.ReceivedAsync += async (model, ea) =>
         {
+            // Master stamp — connects to OrderApi trace via headers
+            using var activity = RabbitMqInstrumentation.StartConsumeActivity(queueName, ea.BasicProperties?.Headers);
+
             var body = ea.Body.ToArray();
             var message = Encoding.UTF8.GetString(body);
             var orderMessage = JsonSerializer.Deserialize<OrderPlacedMessage>(message);
@@ -55,6 +60,7 @@ public class Worker : BackgroundService
             if (orderMessage == null)
             {
                 _logger.LogWarning("Received null order message");
+                activity?.SetStatus(ActivityStatusCode.Error, "Received null order message");
 
                 await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, false);
                 _healthCheck.RecordError();
@@ -62,61 +68,110 @@ public class Worker : BackgroundService
                 return;
             }
 
-            _logger.LogInformation("Updating inventory for Order {OrderId}, MessageId: {MessageId}",
-                orderMessage.OrderId, messageId);
+            activity?.SetTag("order.id", orderMessage.OrderId);
+            activity?.SetTag("message.id", messageId);
+            activity?.SetTag("order.item_count", orderMessage.Items.Count);
+
+            _logger.LogInformation("Updating inventory for Order {OrderId}, MessageId: {MessageId}, TraceId: {TraceId}",
+                orderMessage.OrderId, messageId, activity?.TraceId);
 
             try
             {
                 using var scope = _serviceProvider.CreateScope();
+                bool orderAlreadyProcessed;
                 var dbContext = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
                 var orderRepository = scope.ServiceProvider.GetRequiredService<IPixelMartOrderProcessorRepository>();
 
-                var orderAlreadyProcessed = await dbContext.ProcessedMessages
-                .AnyAsync(pm => pm.MessageId == messageId && pm.WorkerType == WorkerType.InventoryWorker.ToString());
+                // Span: Deduplication check
+                using (var dedupeActivity = ActivitySource.StartActivity("inventory.deduplication_check", ActivityKind.Internal))
+                {
+                    dedupeActivity?.SetTag("message.id", messageId);
+
+                    orderAlreadyProcessed = await dbContext.ProcessedMessages
+                        .AnyAsync(pm => pm.MessageId == messageId && pm.WorkerType == WorkerType.InventoryWorker.ToString());
+
+                    dedupeActivity?.SetTag("message.is_duplicate", orderAlreadyProcessed);
+                }
 
                 if (orderAlreadyProcessed)
                 {
-                    _logger.LogInformation(
-                        "Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.",
+                    _logger.LogInformation("Message {MessageId} for Order {OrderId} already processed. Acknowledging duplicate.",
                         messageId, orderMessage.OrderId);
 
+                    activity?.SetTag("message.skipped_as_duplicate", true);
                     await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
                     _healthCheck.RecordProcessing();
 
                     return;
                 }
 
-                await orderRepository.UpdateInventoryStatusAsync(orderMessage.OrderId, ProcessingStatus.InProgress);
+                // Span: Update status to InProgress
+                using (var statusActivity = ActivitySource.StartActivity("inventory.update_status_in_progress", ActivityKind.Internal))
+                {
+                    statusActivity?.SetTag("order.id", orderMessage.OrderId);
+                    statusActivity?.SetTag("inventory.status", ProcessingStatus.InProgress.ToString());
+
+                    await orderRepository.UpdateInventoryStatusAsync(orderMessage.OrderId, ProcessingStatus.InProgress);
+                }
 
                 await Task.Delay(2000, stoppingToken); // Simulate inventory update process
 
-                orderMessage.Items.ForEach(item =>
-                    _logger.LogInformation("Updated inventory for Product {ProductId}: -{Quantity}", item.ProductId, item.Quantity));
-
-                await orderRepository.UpdateInventoryStatusAsync(orderMessage.OrderId, ProcessingStatus.Completed);
-
-                dbContext.ProcessedMessages.Add(new ProcessedMessage
+                // Span: Update inventory items & record completion
+                using (var inventoryActivity = ActivitySource.StartActivity("inventory.record_completion", ActivityKind.Internal))
                 {
-                    Id = Guid.NewGuid(),
-                    MessageId = messageId,
-                    OrderId = orderMessage.OrderId,
-                    WorkerType = WorkerType.InventoryWorker.ToString(),
-                    ProcessedAt = DateTime.UtcNow
-                });
+                    inventoryActivity?.SetTag("order.id", orderMessage.OrderId);
+                    inventoryActivity?.SetTag("order.item_count", orderMessage.Items.Count);
 
-                await dbContext.SaveChangesAsync();
+                    orderMessage.Items.ForEach(item =>
+                    {
+                        _logger.LogInformation("Updated inventory for Product {ProductId}: -{Quantity}",
+                            item.ProductId, item.Quantity);
 
-                // Publish to email queue
-                var emailQueue = _configuration[AppConstants.RabbitMq.EmailQueue] ?? AppConstants.RabbitMq.DefaultEmailQueue;
-                await _messagePublisher.PublishAsync(emailQueue, orderMessage);
+                        inventoryActivity?.AddEvent(new ActivityEvent("inventory.item_updated",
+                            tags: new ActivityTagsCollection
+                            {
+                                { "product.id", item.ProductId },
+                                { "product.quantity_deducted", item.Quantity }
+                            }));
+                    });
+
+                    await orderRepository.UpdateInventoryStatusAsync(orderMessage.OrderId, ProcessingStatus.Completed);
+
+                    dbContext.ProcessedMessages.Add(new ProcessedMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        MessageId = messageId,
+                        OrderId = orderMessage.OrderId,
+                        WorkerType = WorkerType.InventoryWorker.ToString(),
+                        ProcessedAt = DateTime.UtcNow
+                    });
+
+                    await dbContext.SaveChangesAsync();
+                }
+
+                // Span: Publish to email queue
+                using (var publishActivity = ActivitySource.StartActivity("inventory.publish_to_email", ActivityKind.Producer))
+                {
+                    var emailQueue = _configuration[AppConstants.RabbitMq.EmailQueue] ?? AppConstants.RabbitMq.DefaultEmailQueue;
+
+                    publishActivity?.SetTag("messaging.destination", emailQueue);
+                    publishActivity?.SetTag("order.id", orderMessage.OrderId);
+
+                    await _messagePublisher.PublishAsync(emailQueue, orderMessage);
+                }
 
                 await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
-                _healthCheck.RecordProcessing();
 
+                _healthCheck.RecordProcessing();
+                activity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (DbUpdateException ex)
             {
                 _logger.LogWarning(ex, "Concurrent duplicate processing detected for MessageId: {MessageId}", messageId);
+
+                activity?.SetTag("exception.type", "DbUpdateException");
+                activity?.SetTag("message.concurrent_duplicate", true);
+                activity?.AddException(ex);
 
                 await _rabbitMq.Channel!.BasicAckAsync(ea.DeliveryTag, false);
                 _healthCheck.RecordProcessing();
@@ -124,6 +179,9 @@ public class Worker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating inventory for Order {OrderId}", orderMessage.OrderId);
+
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                activity?.AddException(ex);
 
                 await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, true);
                 _healthCheck.RecordError();
