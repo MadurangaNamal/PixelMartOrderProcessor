@@ -88,6 +88,7 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod()
             .AllowAnyHeader());
 });
+builder.Services.AddPixelMartTelemetry("OrderApi", builder.Configuration);
 
 var app = builder.Build();
 
