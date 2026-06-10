@@ -44,6 +44,7 @@ This ASP.NET Core system delivers a scalable, event-driven e-commerce order proc
 - 📊 **Real-time Status Tracking** - Monitor order progress across multiple processing stages
 - 🔄 **Automatic Retries** - Failed messages are automatically requeued for processing
 - 📝 **Comprehensive Logging** - Structured logging with correlation IDs
+- 🔍 **Distributed Tracing** - OpenTelemetry traces exported to Jaeger across the API and workers
 - 🎯 **Input Validation** - FluentValidation for robust request validation
 - 🐳 **Docker Support** - Full containerization with Docker Compose
 - 📚 **API Documentation** - Interactive Swagger/OpenAPI documentation
@@ -60,7 +61,7 @@ This ASP.NET Core system delivers a scalable, event-driven e-commerce order proc
 ```bash
    docker-compose up -d
 ```
-   This starts PostgreSQL and RabbitMQ containers.
+   This starts PostgreSQL, RabbitMQ, and Jaeger containers.
 
 3. **Configure User Secrets** (for each project)
 ```bash
@@ -115,6 +116,7 @@ This ASP.NET Core system delivers a scalable, event-driven e-commerce order proc
    - API: `https://localhost:5001`
    - Swagger UI: `https://localhost:5001/swagger`
    - RabbitMQ Management: `http://localhost:15672` (guest/guest)
+   - Jaeger UI: `http://localhost:16686`
 
 7. **Place a new order**
 
@@ -155,6 +157,18 @@ All critical components (PostgreSQL DB, RabbitMQ, and the three background worke
 - `GET /health/ready` — Readiness probe
 - `GET /health/live` — Liveness probe
 - `GET /health-ui` — Interactive health dashboard
+
+## 🔍 OpenTelemetry & Distributed Tracing (Jaeger)
+
+The API and workers use **OpenTelemetry** for traces and metrics—instrumenting ASP.NET Core, HTTP clients, EF Core, RabbitMQ message propagation, and custom activities. Spans are exported to **Jaeger** via OTLP (`http://localhost:4317`, configurable in `appsettings.Development.json`). Jaeger starts automatically with `docker-compose up -d`, or on its own:
+
+```bash
+docker-compose -f docker-compose.jaeger.yml up -d
+```
+
+Open **Jaeger UI** at `http://localhost:16686`, place an order, then search for traces from `OrderApi` to follow the request through payment, inventory, and email workers.
+
+![Sample Jaeger trace showing an order flowing through OrderApi and workers](traces.JPG)
 
 ## 🤝 Contributing
 
