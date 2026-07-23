@@ -18,7 +18,8 @@ var connectionString = DatabaseConfiguration.GetConnectionString(builder.Configu
 builder.Services.AddDbContext<PixelMartOrderProcessorDbContext>(options =>
 options.UseNpgsql(
     connectionString,
-    b => b.MigrationsAssembly(AppConstants.MigrationsAssembly)));
+    b => b.MigrationsAssembly(AppConstants.MigrationsAssembly)
+               .EnableRetryOnFailure(3, TimeSpan.FromSeconds(10), null)));
 
 builder.Services.AddScoped<IPixelMartOrderProcessorRepository, PixelMartOrderProcessorRepository>();
 builder.Services.AddSingleton<RabbitMqConnectionManager>();

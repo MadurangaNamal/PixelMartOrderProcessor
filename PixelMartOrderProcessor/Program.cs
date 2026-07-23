@@ -15,13 +15,13 @@ var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsDevelopment())
     builder.Configuration.AddUserSecrets<Program>();
 
-// Retrieve the connection string from DatabaseConfiguration
 var connectionString = DatabaseConfiguration.GetConnectionString(builder.Configuration);
 
 builder.Services.AddDbContext<PixelMartOrderProcessorDbContext>(options =>
-options.UseNpgsql(
-    connectionString,
-    b => b.MigrationsAssembly(AppConstants.MigrationsAssembly)));
+    options.UseNpgsql(
+        connectionString,
+        b => b.MigrationsAssembly(AppConstants.MigrationsAssembly)
+               .EnableRetryOnFailure(3, TimeSpan.FromSeconds(10), null)));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -88,14 +88,18 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod()
             .AllowAnyHeader());
 });
+
 builder.Services.AddPixelMartTelemetry("OrderApi", builder.Configuration);
+
+////
 
 var app = builder.Build();
 
+// Apply migrations at startup
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
-    await db.Database.MigrateAsync();
+    var dbContext = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
+    await dbContext.Database.MigrateAsync();
 }
 
 if (app.Environment.IsDevelopment())

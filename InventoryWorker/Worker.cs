@@ -32,7 +32,7 @@ public class Worker : BackgroundService
         IMessagePublisher messagePublisher,
         WorkerHealthCheck healthCheck)
     {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _logger = logger;
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _rabbitMq = rabbitMq ?? throw new ArgumentNullException(nameof(rabbitMq));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
@@ -50,7 +50,7 @@ public class Worker : BackgroundService
         consumer.ReceivedAsync += async (model, ea) =>
         {
             // Master stamp — connects to OrderApi trace via headers
-            using var activity = RabbitMqInstrumentation.StartConsumeActivity(queueName, ea.BasicProperties?.Headers);
+            using var activity = RabbitMqInstrumentation.StartConsumeActivity(queueName, ea.BasicProperties?.Headers!);
 
             var body = ea.Body.ToArray();
             var message = Encoding.UTF8.GetString(body);
@@ -60,8 +60,8 @@ public class Worker : BackgroundService
             if (orderMessage == null)
             {
                 _logger.LogWarning("Received null order message");
-                activity?.SetStatus(ActivityStatusCode.Error, "Received null order message");
 
+                activity?.SetStatus(ActivityStatusCode.Error, "Received null order message");
                 await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, false);
                 _healthCheck.RecordError();
 
@@ -78,9 +78,9 @@ public class Worker : BackgroundService
             try
             {
                 using var scope = _serviceProvider.CreateScope();
-                bool orderAlreadyProcessed;
                 var dbContext = scope.ServiceProvider.GetRequiredService<PixelMartOrderProcessorDbContext>();
                 var orderRepository = scope.ServiceProvider.GetRequiredService<IPixelMartOrderProcessorRepository>();
+                bool orderAlreadyProcessed;
 
                 // Span: Deduplication check
                 using (var dedupeActivity = ActivitySource.StartActivity("inventory.deduplication_check", ActivityKind.Internal))
@@ -182,7 +182,6 @@ public class Worker : BackgroundService
 
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 activity?.AddException(ex);
-
                 await _rabbitMq.Channel!.BasicNackAsync(ea.DeliveryTag, false, true);
                 _healthCheck.RecordError();
             }
