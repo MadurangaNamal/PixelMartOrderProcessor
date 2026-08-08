@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: PixelMartOrderProcessorDB
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-MySecurePassword123!}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -45,8 +45,8 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:8080
-      - DB_PASSWORD=${DB_PASSWORD:-MySecurePassword123!}
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password={DB_PASSWORD}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password=${DB_PASSWORD}
       - RabbitMq__Host=rabbitmq
       - RabbitMq__Port=5672
       - RabbitMq__Username=${RABBITMQ_USER:-guest}
@@ -54,12 +54,15 @@ services:
       - RabbitMq__OrderPlacedQueue=order-placed-queue
       - RabbitMq__InventoryQueue=inventory-queue
       - RabbitMq__EmailQueue=email-queue
+      - OpenTelemetry__OtlpEndpoint=http://jaeger:4317
     ports:
       - "5000:8080"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
     networks:
       - pixelmart-network
@@ -72,14 +75,16 @@ services:
     container_name: pixelmart-paymentworker
     environment:
       - DOTNET_ENVIRONMENT=Development
-      - DB_PASSWORD=${DB_PASSWORD:-MySecurePassword123!}
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password={DB_PASSWORD}
+      - WorkerName=PaymentWorker
+      - DB_PASSWORD=${DB_PASSWORD}
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password=${DB_PASSWORD}
       - RabbitMq__Host=rabbitmq
       - RabbitMq__Port=5672
       - RabbitMq__Username=${RABBITMQ_USER:-guest}
       - RabbitMq__Password=${RABBITMQ_PASS:-guest}
       - RabbitMq__OrderPlacedQueue=order-placed-queue
       - RabbitMq__InventoryQueue=inventory-queue
+      - OpenTelemetry__OtlpEndpoint=http://jaeger:4317
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,14 +101,16 @@ services:
     container_name: pixelmart-inventoryworker
     environment:
       - DOTNET_ENVIRONMENT=Development
-      - DB_PASSWORD=${DB_PASSWORD:-MySecurePassword123!}
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password={DB_PASSWORD}
+      - WorkerName=InventoryWorker
+      - DB_PASSWORD=${DB_PASSWORD}
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password=${DB_PASSWORD}
       - RabbitMq__Host=rabbitmq
       - RabbitMq__Port=5672
       - RabbitMq__Username=${RABBITMQ_USER:-guest}
       - RabbitMq__Password=${RABBITMQ_PASS:-guest}
       - RabbitMq__InventoryQueue=inventory-queue
       - RabbitMq__EmailQueue=email-queue
+      - OpenTelemetry__OtlpEndpoint=http://jaeger:4317
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,13 +127,15 @@ services:
     container_name: pixelmart-emailworker
     environment:
       - DOTNET_ENVIRONMENT=Development
-      - DB_PASSWORD=${DB_PASSWORD:-MySecurePassword123!}
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password={DB_PASSWORD}
+      - WorkerName=EmailWorker
+      - DB_PASSWORD=${DB_PASSWORD}
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=PixelMartOrderProcessorDB;Username=postgres;Password=${DB_PASSWORD}
       - RabbitMq__Host=rabbitmq
       - RabbitMq__Port=5672
       - RabbitMq__Username=${RABBITMQ_USER:-guest}
       - RabbitMq__Password=${RABBITMQ_PASS:-guest}
       - RabbitMq__EmailQueue=email-queue
+      - OpenTelemetry__OtlpEndpoint=http://jaeger:4317
     depends_on:
       postgres:
         condition: service_healthy
@@ -144,7 +153,15 @@ services:
       - "4318:4318"    # OTLP HTTP receiver
     environment:
       - COLLECTOR_OTLP_ENABLED=true
-
+    networks:
+    - pixelmart-network 
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:14269/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
 volumes:
   postgres_data:
     driver: local

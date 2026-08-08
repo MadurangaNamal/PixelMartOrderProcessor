@@ -26,6 +26,7 @@ builder.Services.AddDbContext<PixelMartOrderProcessorDbContext>(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<IPixelMartOrderProcessorRepository, PixelMartOrderProcessorRepository>();
 builder.Services.AddSingleton<RabbitMqConnectionManager>();
 builder.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
@@ -50,11 +51,15 @@ builder.Services.AddHealthChecks()
         AppConstants.HealthChecks.RabbitMqCustom,
         failureStatus: HealthStatus.Unhealthy,
         tags: [AppConstants.HealthChecks.Tags.Messaging, AppConstants.HealthChecks.Tags.RabbitMq])
+    .AddCheck<JaegerHealthCheck>(
+        "jaeger",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["observability"])
     .AddNpgSql(
         connectionString,
         name: AppConstants.HealthChecks.PostgresConnection,
         tags: [AppConstants.HealthChecks.Tags.Db, AppConstants.HealthChecks.Tags.Postgres])
-     .AddTypeActivatedCheck<RemoteWorkerHealthCheck>(
+    .AddTypeActivatedCheck<RemoteWorkerHealthCheck>(
         AppConstants.HealthChecks.PaymentWorker,
         failureStatus: HealthStatus.Unhealthy,
         tags: [AppConstants.HealthChecks.Tags.Worker, AppConstants.HealthChecks.Tags.Remote],
@@ -76,7 +81,9 @@ builder.Services.AddHealthChecksUI(setup =>
 {
     setup.SetEvaluationTimeInSeconds(10);
     setup.MaximumHistoryEntriesPerEndpoint(50);
-    setup.AddHealthCheckEndpoint(AppConstants.ApplicationName, AppConstants.HealthChecks.Paths.Health);
+    setup.AddHealthCheckEndpoint(
+        AppConstants.ApplicationName,
+        $"http://localhost:8080{AppConstants.HealthChecks.Paths.Health}");
 })
 .AddInMemoryStorage();
 
